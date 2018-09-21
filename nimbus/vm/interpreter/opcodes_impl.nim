@@ -652,7 +652,7 @@ proc staticCallParams(computation: var BaseComputation): (UInt256, UInt256, EthA
     memoryOutputSize,
     emvcStatic) # is_static
 
-template genCall(callName: untyped): untyped =
+template genCall(callName: untyped, opCode: Op): untyped =
   op callName, inline = false:
     ## CALL, 0xf1, Message-Call into an account
     ## CALLCODE, 0xf2, Message-call into this account with an alternative account's code.
@@ -686,27 +686,26 @@ template genCall(callName: untyped): untyped =
       callData = computation.memory.read(memInPos, memInLen)
       senderBalance = computation.vmState.readOnlyStateDb.getBalance(computation.msg.storageAddress)
       # TODO check gas balance rollover
-      # TODO: shouldTransferValue in py-evm is:
-      #   True for call and callCode
-      #   False for callDelegate and callStatic
-      insufficientFunds = senderBalance < value # TODO: and shouldTransferValue
-      stackTooDeep = computation.msg.depth >= MaxCallDepth
+    when opCode in {Call, CallCode}:
+      let
+        insufficientFunds = senderBalance < value
+        stackTooDeep = computation.msg.depth >= MaxCallDepth
 
-    if insufficientFunds or stackTooDeep:
-      computation.returnData = @[]
-      var errMessage: string
-      if insufficientFunds:
-        # Note: for some reason we can't use strformat here, we get undeclared identifiers
-        errMessage = &"Insufficient Funds: have: " & $senderBalance & "need: " & $value
-      elif stackTooDeep:
-        errMessage = "Stack Limit Reached"
-      else:
-        raise newException(VMError, "Invariant: Unreachable code path")
+      if insufficientFunds or stackTooDeep:
+        computation.returnData = @[]
+        var errMessage: string
+        if insufficientFunds:
+          # Note: for some reason we can't use strformat here, we get undeclared identifiers
+          errMessage = &"Insufficient Funds: have: " & $senderBalance & "need: " & $value
+        elif stackTooDeep:
+          errMessage = "Stack Limit Reached"
+        else:
+          raise newException(VMError, "Invariant: Unreachable code path")
 
-      # computation.logger.debug(&"failure: {errMessage}") # TODO: Error: expression 'logger' has no type (or is ambiguous)
-      computation.gasMeter.returnGas(childMsgGas)
-      push: 0
-      return
+        # computation.logger.debug(&"failure: {errMessage}") # TODO: Error: expression 'logger' has no type (or is ambiguous)
+        computation.gasMeter.returnGas(childMsgGas)
+        push: 0
+        return
 
     let code =
       if codeAddress != ZERO_ADDRESS:
@@ -742,10 +741,10 @@ template genCall(callName: untyped): untyped =
       if not childComputation.shouldBurnGas:
         computation.gasMeter.returnGas(childComputation.gasMeter.gasRemaining)
 
-genCall(call)
-genCall(callCode)
-genCall(delegateCall)
-genCall(staticCall)
+genCall(call, Call)
+genCall(callCode, CallCode)
+genCall(delegateCall, DelegateCall)
+genCall(staticCall, StaticCall)
 
 op returnOp, inline = false, startPos, size:
   ## 0xf3, Halt execution returning output data.
