@@ -94,9 +94,7 @@ proc applyMessage(computation: var BaseComputation) =
 
   if computation.msg.value != 0:
     let senderBalance =
-      computation.vmState.chainDb.getStateDb(
-        computation.vmState.blockHeader.hash, false).
-        getBalance(computation.msg.sender)
+      computation.vmState.readOnlyStateDB.getBalance(computation.msg.sender)
 
     if sender_balance < computation.msg.value:
       raise newException(InsufficientFunds,
@@ -104,7 +102,7 @@ proc applyMessage(computation: var BaseComputation) =
       )
 
     computation.vmState.mutateStateDb:
-      db.setBalance(computation.msg.sender, db.getBalance(computation.msg.sender) - computation.msg.value)
+      db.setBalance(computation.msg.sender, senderBalance - computation.msg.value)
       db.addBalance(computation.msg.storage_address, computation.msg.value)
 
     debug "Apply message",
